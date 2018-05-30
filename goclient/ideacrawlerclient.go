@@ -66,6 +66,7 @@ type CrawlJob struct {
 	CheckContent            bool
 	Prefetch                bool
 	UseAnchorText           bool
+	CleanUpFunc             func()
 
 	dopt           *pb.DomainOpt
 	svrHost        string
@@ -242,10 +243,17 @@ func (cj *CrawlJob) Stop() {
 	}
 }
 
+func (cj *CrawlJob) OnFinish(onFinishFunc func()) {
+	cj.CleanUpFunc = onFinishFunc
+}
+
 func (cj *CrawlJob) Run() {
 	cj.running = true
 	defer func() {
 		cj.running = false
+		if cj.CleanUpFunc != nil {
+			cj.CleanUpFunc()
+		}
 	}()
 
 	if cj.usePageChan == true && cj.Callback != nil {
