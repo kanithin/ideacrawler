@@ -67,6 +67,7 @@ const (
 	HTTPSTATUS_FOLLOW_PARSE_ERROR = 1550
 )
 
+// TODO - implement the DEBUG feature
 var cliParams = struct {
 	DialAddress    string "Interface to dial from.  Defaults to OS defined routes|"
 	SaveLoginPages string "Saves login pages in this path. Don't save them if empty."
@@ -488,9 +489,10 @@ func (s *ideaCrawlerServer) RunJob(subId string, job *Job) {
 	mux.HandleErrors(fetchbot.HandlerFunc(func(ctx *fetchbot.Context, res *http.Response, err error) {
 		job.log.Printf("ERR - fetch error : %s\n", err.Error())
 		phtml := pb.PageHTML{
-			Success:        false,
-			Error:          err.Error(),
-			Sub:            &pb.Subscription{},
+			Success: false,
+			Error:   err.Error(),
+			Sub:     &pb.Subscription{},
+			//TODO -- Check if ctx always has the correct URL
 			Url:            ctx.Cmd.URL().String(),
 			Httpstatuscode: HTTPSTATUS_FETCHBOT_ERROR,
 			Content:        []byte{},
@@ -504,6 +506,7 @@ func (s *ideaCrawlerServer) RunJob(subId string, job *Job) {
 	// requests.
 	mux.Response().Method("GET").ContentType("text/html").Handler(fetchbot.HandlerFunc(
 		func(ctx *fetchbot.Context, res *http.Response, err error) {
+			requestUrl := res.Request.URL
 			ccmd := ctx.Cmd.(CrawlCommand)
 			anchorText := ccmd.anchorText
 			if ccmd.noCallback == true {
@@ -513,10 +516,11 @@ func (s *ideaCrawlerServer) RunJob(subId string, job *Job) {
 				job.log.Printf("STATUS - %s %s - %d : %s\n", ctx.Cmd.Method(), ctx.Cmd.URL(), res.StatusCode, res.Status)
 				if ccmd.URLDepth() == 0 {
 					phtml := pb.PageHTML{
-						Success:        false,
-						Error:          res.Status,
-						Sub:            &pb.Subscription{},
-						Url:            ctx.Cmd.URL().String(),
+						Success: false,
+						Error:   res.Status,
+						Sub:     &pb.Subscription{},
+						//Url:            ctx.Cmd.URL().String(),
+						Url:            requestUrl.String(),
 						Httpstatuscode: int32(res.StatusCode),
 						Content:        []byte{},
 						MetaStr:        ccmd.MetaStr(),
@@ -534,8 +538,9 @@ func (s *ideaCrawlerServer) RunJob(subId string, job *Job) {
 					Success:        false,
 					Error:          emsg,
 					Sub:            &pb.Subscription{},
-					Url:            ctx.Cmd.URL().String(),
+					Url:            requestUrl.String(),
 					Httpstatuscode: HTTPSTATUS_RESPONSE_ERROR,
+					MetaStr:        ctx.Cmd.(CrawlCommand).MetaStr(),
 					Content:        []byte{},
 					UrlDepth:       ccmd.URLDepth(),
 				}
@@ -594,7 +599,7 @@ func (s *ideaCrawlerServer) RunJob(subId string, job *Job) {
 					sendPageHTML(ctx, phtml)
 					return
 				}
-				job.EnqueueLinks(ctx, doc, ccmd.URLDepth()+1)
+				job.EnqueueLinks(ctx, doc, ccmd.URLDepth()+1, requestUrl)
 				job.log.Println("Enqueued", ctx.Cmd.URL().String())
 			}
 
@@ -1228,7 +1233,7 @@ func (s *ideaCrawlerServer) AddDomainAndListen(opts *pb.DomainOpt, ostream pb.Id
 	return nil
 }
 
-func (job *Job) EnqueueLinks(ctx *fetchbot.Context, doc *goquery.Document, urlDepth int32) {
+func (job *Job) EnqueueLinks(ctx *fetchbot.Context, doc *goquery.Document, urlDepth int32, requestUrl *url.URL) {
 	job.mu.Lock()
 	defer job.mu.Unlock()
 	var SendMethod = "GET"
@@ -1241,7 +1246,7 @@ func (job *Job) EnqueueLinks(ctx *fetchbot.Context, doc *goquery.Document, urlDe
 		anchorText := strings.TrimSpace(s.Text())
 
 		// Resolve address
-		u, err := ctx.Cmd.URL().Parse(val)
+		u, err := requestUrl.Parse(val)
 		if err != nil {
 			job.log.Printf("enqueuelinks: resolve URL %s - %s\n", val, err)
 			return

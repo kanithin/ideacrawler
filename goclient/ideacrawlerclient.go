@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc"
 	"io"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -66,6 +67,7 @@ type CrawlJob struct {
 	CheckContent            bool
 	Prefetch                bool
 	UseAnchorText           bool
+	WaitGroup               *sync.WaitGroup
 
 	dopt           *pb.DomainOpt
 	svrHost        string
@@ -242,10 +244,15 @@ func (cj *CrawlJob) Stop() {
 	}
 }
 
+func (cj *CrawlJob) OnFinish() {
+	cj.WaitGroup.Done()
+}
+
 func (cj *CrawlJob) Run() {
 	cj.running = true
 	defer func() {
 		cj.running = false
+		cj.OnFinish()
 	}()
 
 	if cj.usePageChan == true && cj.Callback != nil {
